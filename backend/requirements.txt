@@ -1,0 +1,23 @@
+# Web / application layer
+fastapi>=0.111,<1.0
+uvicorn[standard]>=0.30
+pydantic>=2.7,<3
+pydantic-settings>=2.3
+email-validator>=2.1
+PyJWT[crypto]>=2.8
+httpx>=0.27
+bcrypt>=4.1
+
+# Data access layer
+SQLAlchemy>=2.0.30,<2.1
+alembic>=1.13
+psycopg[binary]>=3.1
+
+# Domain layer (chemistry + inference)
+# These three must match the versions the model bundle was exported with (section 12 of the
+# notebook prints them). Pickled models aren't guaranteed to load across scikit-learn versions,
+# and the startup reference check fails if RDKit prepares molecules differently.
+rdkit==2026.9.1
+scikit-learn==1.9.1
+numpy==2.5.4
+joblib>=1.3

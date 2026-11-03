@@ -1,0 +1,17 @@
+# Build output and local caches
+build/
+app/build/
+.gradle/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Machine-specific settings (each person has their own)
+local.properties
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db

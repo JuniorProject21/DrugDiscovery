@@ -1,0 +1,3 @@
+# Everything the server needs, plus the test tools.
+-r requirements.txt
+pytest>=8.0
