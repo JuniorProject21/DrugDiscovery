@@ -1,0 +1,64 @@
+# The whole InhibitAI backend on one Linux server: PostgreSQL, the API, and Caddy for HTTPS.
+#
+#   cp .env.example .env     # then fill it in
+#   docker compose up -d --build
+#
+# See DEPLOY.md in the repository root for the full walkthrough.
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: inhibitai
+      POSTGRES_USER: inhibitai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inhibitai -d inhibitai"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ../backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      INHIBITAI_DATABASE_URL: postgresql+psycopg://inhibitai:${POSTGRES_PASSWORD}@db:5432/inhibitai
+      INHIBITAI_JWT_SECRET: ${INHIBITAI_JWT_SECRET:?Set INHIBITAI_JWT_SECRET in deploy/.env}
+      INHIBITAI_ALLOWED_SIGNUP_EMAILS: ${INHIBITAI_ALLOWED_SIGNUP_EMAILS:-}
+      INHIBITAI_SMTP_HOST: ${INHIBITAI_SMTP_HOST:-}
+      INHIBITAI_SMTP_PORT: ${INHIBITAI_SMTP_PORT:-587}
+      INHIBITAI_SMTP_USERNAME: ${INHIBITAI_SMTP_USERNAME:-}
+      INHIBITAI_SMTP_PASSWORD: ${INHIBITAI_SMTP_PASSWORD:-}
+      INHIBITAI_SMTP_FROM: ${INHIBITAI_SMTP_FROM:-}
+      INHIBITAI_SMTP_SECURITY: ${INHIBITAI_SMTP_SECURITY:-starttls}
+      INHIBITAI_GOOGLE_CLIENT_IDS: ${INHIBITAI_GOOGLE_CLIENT_IDS:-}
+    volumes:
+      # Replace the bundle in backend/models/ and run `docker compose restart api` to update the model.
+      - ../backend/models:/app/models:ro
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      INHIBITAI_DOMAIN: ${INHIBITAI_DOMAIN:?Set INHIBITAI_DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

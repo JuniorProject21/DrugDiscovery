@@ -1,0 +1,11 @@
+# Server secrets for deploy/docker-compose.yml
+deploy/.env
+.DS_Store
+
+# Editor settings and caches (each person has their own)
+.idea/
+*.iml
+
+# Python and notebook caches
+__pycache__/
+.ipynb_checkpoints/

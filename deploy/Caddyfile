@@ -1,0 +1,6 @@
+# HTTPS in front of the API. Caddy gets and renews a Let's Encrypt certificate for the
+# domain automatically, as long as the domain points at this server and ports 80/443 are open.
+{$INHIBITAI_DOMAIN} {
+	encode gzip
+	reverse_proxy api:8000
+}
