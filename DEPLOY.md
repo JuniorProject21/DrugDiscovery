@@ -160,6 +160,63 @@ Run `docker compose up -d` to apply. Any other SMTP provider works the same way;
 - **"Developer console is not set up correctly":** the Android client's package name or SHA-1 doesn't
   match the APK.
 
+## 6. The "Learn more" assistant (optional)
+
+The assistant on a result explains the prediction in plain English and answers follow-up questions.
+It needs an open-weights chat model reachable over the OpenAI-compatible API; without one the
+endpoint says so and the app simply shows its own written explanation, so this is safe to skip.
+
+**The quickest free option** is [Groq](https://console.groq.com), which serves Llama and other open
+models and gives you a free API key:
+
+1. Sign in, create an API key, and copy it.
+2. Add three lines to the server's `.env` (`backend/.env` when running locally,
+   `deploy/.env` in Docker):
+
+   ```
+   INHIBITAI_LLM_BASE_URL=https://api.groq.com/openai/v1
+   INHIBITAI_LLM_API_KEY=gsk_your_key_here
+   INHIBITAI_LLM_MODEL=openai/gpt-oss-120b
+   ```
+
+3. Restart the server. Nothing in the app needs rebuilding.
+
+Groq changes which models it serves, and not every account sees the same list. If the server log
+says `model_not_found`, ask your own key which models it can use and put one of those in
+`INHIBITAI_LLM_MODEL`:
+
+```bash
+cd backend && .venv/bin/python -c "
+import httpx, os
+key = next(l.split('=', 1)[1].strip() for l in open('.env') if l.startswith('INHIBITAI_LLM_API_KEY='))
+for m in sorted(x['id'] for x in httpx.get('https://api.groq.com/openai/v1/models',
+                headers={'Authorization': f'Bearer {key}'}).json()['data']):
+    print(m)
+"
+```
+
+Ignore the `whisper` (speech), `orpheus` (text-to-speech) and `prompt-guard` (safety) entries; any
+of the chat models works.
+
+Any other OpenAI-compatible provider works the same way - only the three values change:
+
+| Provider | `INHIBITAI_LLM_BASE_URL` | Example model |
+| --- | --- | --- |
+| Groq | `https://api.groq.com/openai/v1` | `openai/gpt-oss-120b` |
+| Together AI | `https://api.together.xyz/v1` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `meta-llama/llama-3.3-70b-instruct` |
+| Ollama on the same machine | `http://localhost:11434/v1` (no key) | `llama3.2` |
+
+**Things to know:**
+
+- **What is sent:** the compound's SMILES and the numbers this server computed for it - the score,
+  threshold, reliability, the fragments from "why this result" and the rule-based ADME. Nothing
+  about the user is sent, and the model is told it may not invent or change a number.
+- **What it cannot do:** it never produces a prediction. The verdict always comes from the trained
+  model; the assistant only explains it.
+- **Privacy:** an unpublished structure does leave your machine for the provider. Use Ollama locally
+  if that matters for a particular compound.
+
 ## Keeping it running
 
 | Task | How |

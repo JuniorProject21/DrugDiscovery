@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,6 +29,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -37,17 +40,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import java.util.Locale
 import com.inhibitai.app.ui.InhibitViewModel
 import com.inhibitai.app.ui.SmilesCheck
 import com.inhibitai.app.ui.components.*
 import com.inhibitai.app.ui.theme.*
+import java.util.Locale
 
 @Composable
 fun PredictScreen(
     vm: InhibitViewModel,
     contentPadding: PaddingValues,
     onResult: (String) -> Unit,
+    onBatch: () -> Unit,
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -69,7 +73,7 @@ fun PredictScreen(
                 .padding(horizontal = 20.dp),
         ) {
             VSpace(12.dp)
-            AppHeader(onBellClick = { Toast.makeText(context, "No new notifications", Toast.LENGTH_SHORT).show() })
+            AppHeader()
             VSpace(34.dp)
             Text("New Prediction", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             VSpace(8.dp)
@@ -100,10 +104,10 @@ fun PredictScreen(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(72.dp)
+                    .heightIn(min = 72.dp)
                     .clip(fieldShape)
                     .background(FieldBg)
-                    .border(1.dp, if (fieldError != null) Red else Color(0xFF2E2846), fieldShape)
+                    .border(1.dp, if (fieldError != null) Red else FieldBorder, fieldShape)
                     .padding(start = 18.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -122,7 +126,7 @@ fun PredictScreen(
                             keyboardType = KeyboardType.Password, imeAction = ImeAction.Done,
                             autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "SMILES string" },
                     )
                 }
                 Box(Modifier.padding(horizontal = 8.dp).width(1.dp).height(40.dp).background(CardBorder))
@@ -192,8 +196,8 @@ fun PredictScreen(
                             .fillMaxWidth()
                             .height(340.dp)
                             .clip(previewShape)
-                            .background(Color(0xFF0A0912))
-                            .border(1.dp, Color(0xFF1C1929), previewShape),
+                            .background(PreviewBg)
+                            .border(1.dp, PreviewBorder, previewShape),
                         contentAlignment = Alignment.Center,
                     ) {
                         when (check) {
@@ -201,7 +205,7 @@ fun PredictScreen(
                             SmilesCheck.Checking -> CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp)
                             is SmilesCheck.Invalid -> PreviewMessage("No preview: the SMILES is not valid")
                             is SmilesCheck.Unavailable -> PreviewMessage(check.message)
-                            is SmilesCheck.Valid -> StructureImage(check.input, dark = true, Modifier.fillMaxSize().padding(20.dp))
+                            is SmilesCheck.Valid -> StructureImage(check.input, dark = ThemeState.isDark, Modifier.fillMaxSize().padding(20.dp))
                         }
                     }
                 }
@@ -213,6 +217,12 @@ fun PredictScreen(
                 leadingIcon = Icons.Filled.AutoAwesome,
                 loading = vm.isPredicting,
                 enabled = smiles.isNotBlank() && check !is SmilesCheck.Invalid,
+            )
+            VSpace(16.dp)
+            // Screening a list of compounds, rather than one at a time.
+            OutlineActionButton(
+                Icons.Outlined.UploadFile, "Import a file of compounds", onClick = onBatch,
+                modifier = Modifier.fillMaxWidth(),
             )
             VSpace(26.dp)
         }
@@ -230,7 +240,7 @@ fun PredictScreen(
                     .background(CardBg)
                     .border(1.dp, CardBorder, shape),
             ) {
-                StructureImage(validated, dark = true, Modifier.fillMaxSize().padding(28.dp))
+                StructureImage(validated, dark = ThemeState.isDark, Modifier.fillMaxSize().padding(28.dp))
                 IconButton(onClick = { fullscreen = false }, modifier = Modifier.align(Alignment.TopEnd)) {
                     Icon(Icons.Filled.Close, "Close", tint = TextPrimary)
                 }

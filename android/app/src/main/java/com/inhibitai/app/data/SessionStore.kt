@@ -1,6 +1,7 @@
 package com.inhibitai.app.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -17,25 +18,32 @@ class SessionStore(private val context: Context) {
     suspend fun load(): Session? {
         val prefs = context.sessionDataStore.data.first()
         val token = prefs[TOKEN] ?: return null
-        val user = User(prefs[USER_ID] ?: return null, prefs[EMAIL].orEmpty(), prefs[NAME].orEmpty())
+        val user = User(
+            id = prefs[USER_ID] ?: return null,
+            // A phone account has no email and vice versa, so a blank one is stored as absent.
+            email = prefs[EMAIL]?.ifBlank { null },
+            phone = prefs[PHONE]?.ifBlank { null },
+            fullName = prefs[NAME].orEmpty(),
+        )
         return Session(token, user)
     }
 
     suspend fun save(token: String, user: User) {
         context.sessionDataStore.edit {
             it[TOKEN] = token
-            it[USER_ID] = user.id
-            it[EMAIL] = user.email
-            it[NAME] = user.fullName
+            it.writeUser(user)
         }
     }
 
     suspend fun updateUser(user: User) {
-        context.sessionDataStore.edit {
-            it[USER_ID] = user.id
-            it[EMAIL] = user.email
-            it[NAME] = user.fullName
-        }
+        context.sessionDataStore.edit { it.writeUser(user) }
+    }
+
+    private fun MutablePreferences.writeUser(user: User) {
+        this[USER_ID] = user.id
+        this[EMAIL] = user.email.orEmpty()
+        this[PHONE] = user.phone.orEmpty()
+        this[NAME] = user.fullName
     }
 
     suspend fun clear() {
@@ -46,6 +54,7 @@ class SessionStore(private val context: Context) {
         val TOKEN = stringPreferencesKey("token")
         val USER_ID = longPreferencesKey("user_id")
         val EMAIL = stringPreferencesKey("email")
+        val PHONE = stringPreferencesKey("phone")
         val NAME = stringPreferencesKey("full_name")
     }
 }

@@ -70,7 +70,7 @@ fun InsightsScreen(
                 .padding(horizontal = 20.dp),
         ) {
             VSpace(12.dp)
-            AppHeader(onBellClick = { Toast.makeText(context, "No new notifications", Toast.LENGTH_SHORT).show() })
+            AppHeader()
             VSpace(30.dp)
             Text("Insights", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = PurpleLight)
             Text(
@@ -80,16 +80,18 @@ fun InsightsScreen(
             VSpace(26.dp)
             TotalPredictedCard(vm.total, onClick = { onOpenHistory("all") })
             VSpace(14.dp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                MiniStatCard(vm.activeCount, PredictionStatus.ACTIVE, { onOpenHistory("active") }, Modifier.weight(1f))
-                MiniStatCard(vm.inactiveCount, PredictionStatus.INACTIVE, { onOpenHistory("inactive") }, Modifier.weight(1f))
-            }
+            AdaptiveCells(
+                listOf(
+                    { m -> MiniStatCard(vm.activeCount, PredictionStatus.ACTIVE, { onOpenHistory("active") }, m) },
+                    { m -> MiniStatCard(vm.inactiveCount, PredictionStatus.INACTIVE, { onOpenHistory("inactive") }, m) },
+                )
+            )
             VSpace(14.dp)
 
             // ---- distribution ----
             GlassCard(
                 Modifier.fillMaxWidth(),
-                background = Brush.linearGradient(listOf(Color(0xFF15102A), CardBg)),
+                background = Brush.linearGradient(listOf(PurpleTint, CardBg)),
                 borderColor = Purple.copy(alpha = 0.40f),
             ) {
                 Column(Modifier.padding(18.dp)) {
@@ -138,10 +140,12 @@ fun InsightsScreen(
                 }
             }
             VSpace(14.dp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                InfoTile(Icons.Outlined.BarChart, "Average Confidence", "${vm.averageConfidence}%", {}, Modifier.weight(1f))
-                InfoTile(Icons.Outlined.BookmarkBorder, "Saved Compounds", "${vm.savedCount}", { onOpenHistory("saved") }, Modifier.weight(1f))
-            }
+            AdaptiveCells(
+                listOf(
+                    { m -> InfoTile(Icons.Outlined.BarChart, "Average Confidence", "${vm.averageConfidence}%", {}, m) },
+                    { m -> InfoTile(Icons.Outlined.BookmarkBorder, "Saved Compounds", "${vm.savedCount}", { onOpenHistory("saved") }, m) },
+                )
+            )
             VSpace(24.dp)
         }
     }

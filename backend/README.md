@@ -95,24 +95,36 @@ an `Authorization: Bearer <token>` header.
 | `POST /auth/google` | `{id_token}` from the app's Google button → token + user (creates or links the account) |
 | `POST /auth/password-reset/request` | `{email}` → emails a 6-digit code (same answer whether or not the account exists) |
 | `POST /auth/password-reset/confirm` | `{email, code, new_password}` → token + user |
+| `POST /auth/phone/sign-up` | `{phone, password, full_name}` → texts a 6-digit code (account stays unverified) |
+| `POST /auth/phone/resend` | `{phone}` → a fresh code (same answer whether or not the number is waiting) |
+| `POST /auth/phone/verify` | `{phone, code}` → token + user; verifying is what creates a usable account |
+| `POST /auth/phone/login` | `{phone, password}` → token + user |
+| `POST /auth/phone/password-reset/request` | `{phone}` → texts a 6-digit reset code |
+| `POST /auth/phone/password-reset/confirm` | `{phone, code, new_password}` → token + user |
 | `GET /auth/me` | The signed-in user (`has_password`, `google_linked` included) |
-| `PATCH /auth/me` | `{full_name}` |
+| `PATCH /auth/me` | `{full_name, institution, role, research_area, age}`; only the fields sent are changed, `""` clears one |
 | `POST /auth/change-password` | `{current_password, new_password}`; Google-only accounts may omit `current_password` |
 | `GET /model` | Model version, threshold, conformal significance, featuriser, metrics |
 | `POST /chem/validate` | `{smiles}` → valid?, readable error, standardised SMILES, formula, weight, PubChem name |
-| `POST /chem/depict` | `{smiles, width, height, theme: light/dark, format: png/svg}` → image |
+| `POST /chem/depict` | `{smiles, width, height, theme: light/dark, format: png/svg, highlight_atoms}` → image, with those atoms shaded |
 | `POST /predictions` | `{smiles}` → new history entry with its prediction (`cached: true` when the structure was predicted before) |
 | `GET /predictions` | The user's history, newest first (`limit`, `offset`) |
 | `GET /predictions/{id}` | One entry |
 | `PATCH /predictions/{id}` | `{is_saved}` and/or `{name}` (rename) |
 | `DELETE /predictions/{id}` | Remove from history |
 | `POST /predictions/similar` | `{smiles, min_similarity, limit}` → the user's earlier entries with similar structures |
+| `POST /predictions/batch` | `{smiles[], labels[], save}` → one row per compound, failures carrying their reason (up to 500) |
+| `POST /predictions/explain` | `{smiles}` → the fragments that moved the score, with the atoms to shade |
+| `POST /chat` | `{smiles, question, name, history}` → the assistant's answer, grounded in this server's numbers (501 when no model is configured) |
 
 A prediction carries:
 
 - `label`: the conformal verdict (`active` / `inactive` / `uncertain`)
 - `score`: the fraction of trees voting active. Like the notebook says, it isn't a probability of being right.
 - `threshold`, `confidence` (1 minus the other label's p-value) and the two conformal p-values
+- `adme`: absorption, distribution, metabolism and toxicity levels, computed from the structure with
+  published rules (Lipinski, Veber, PAINS and Brenk alerts), plus the properties and thresholds behind
+  them. Marked `"method": "rule-based"`: it is not a trained ADME model.
 - `nearest_similarity`, `reliability` (`high` / `medium` / `low`) and `in_domain`
 - `pic50` and `adme`, which stay null until those models exist
 - `model_version`
@@ -172,6 +184,9 @@ The tests train a tiny throwaway model on 16 molecules to exercise the code. It 
 - **GIN blending.** Only the Extra Trees part of the hybrid is served. The report found the GIN's
   share changes results by less than the split-to-split noise. Adding it means one more model class in
   `app/domain/inference/service.py`, plus the PyTorch Geometric dependency.
-- **ADME and pIC50.** The API fields exist. pIC50 works if you pass a fitted `regressor` to the
-  export script. ADME stays `null`.
-- **Sign in with Apple.** It needs a paid Apple developer account.
+- **pIC50.** The API field exists and works if you pass a fitted `regressor` to the export script.
+- **Trained ADME models.** ADME is filled in from the structure with published rules
+  (`app/domain/adme.py`), which is honest but is not a prediction. Real ADME models would mean
+  training on public ADME data the way the activity model was trained.
+- **Sign in with Apple.** Dropped: it needs a paid Apple developer account. The app offers
+  email, phone number and Google.

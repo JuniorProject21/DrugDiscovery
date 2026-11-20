@@ -2,6 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.deps import get_container, get_current_user, get_prediction_service
 from app.api.schemas import (
+    BatchRequest,
+    BatchResponse,
+    BatchRow,
+    ExplanationResponse,
+    FragmentOut,
     PredictResponse,
     SimilarHit,
     SimilarRequest,
@@ -12,7 +17,7 @@ from app.api.schemas import (
 )
 from app.data.models import User
 from app.domain.chemistry import InvalidSmilesError
-from app.domain.inference.service import ModelUnavailableError
+from app.domain.inference.service import ExplanationUnavailableError, ModelUnavailableError
 from app.services.predictions import PredictionService, SubmissionNotFound
 
 router = APIRouter(prefix="/predictions", tags=["predictions"])
@@ -51,6 +56,53 @@ def similar_predictions(body: SimilarRequest, user: User = Depends(get_current_u
     except InvalidSmilesError as exc:
         raise HTTPException(422, str(exc))
     return [SimilarHit(similarity=sim, submission=SubmissionOut.of(s, target)) for s, sim in hits]
+
+
+@router.post("/batch", response_model=BatchResponse)
+def predict_batch(body: BatchRequest, user: User = Depends(get_current_user),
+                  service: PredictionService = Depends(get_prediction_service), target: str = Depends(_target)):
+    """Screen a whole uploaded file of SMILES at once (progress report section 6.6 did this by hand).
+
+    Rows that cannot be read come back with the reason rather than failing the request, so the app
+    can show exactly which lines of the file need fixing.
+    """
+    try:
+        rows = body.rows()
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    try:
+        outcomes = service.predict_batch(user, rows, save=body.save)
+    except ModelUnavailableError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    return BatchResponse(
+        rows=[BatchRow.of(o, target) for o in outcomes],
+        total=len(outcomes),
+        succeeded=sum(o.ok for o in outcomes),
+        failed=sum(not o.ok for o in outcomes),
+        saved=body.save,
+    )
+
+
+@router.post("/explain", response_model=ExplanationResponse)
+def explain_prediction(body: SmilesRequest, container=Depends(get_container),
+                       user: User = Depends(get_current_user)):
+    """Which fragments of this compound pushed its score, and by how much."""
+    try:
+        prepared = container.chemistry.prepare(body.smiles)
+        model_version, explanation = container.inference.explain(prepared.canonical_smiles)
+    except InvalidSmilesError as exc:
+        raise HTTPException(422, str(exc))
+    except ExplanationUnavailableError as exc:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, str(exc))
+    except ModelUnavailableError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    return ExplanationResponse(
+        canonical_smiles=explanation.canonical_smiles, score=explanation.score,
+        threshold=explanation.threshold, label=explanation.label, model_version=model_version,
+        fragments=[FragmentOut(fragment=f.fragment, weight=f.weight, radius=f.radius,
+                               atoms=list(f.atoms), occurrences=f.occurrences)
+                   for f in explanation.fragments],
+    )
 
 
 @router.get("/{submission_id}", response_model=SubmissionOut)

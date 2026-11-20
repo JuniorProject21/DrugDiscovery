@@ -33,7 +33,8 @@ def validate(body: SmilesRequest, chemistry: ChemistryService = Depends(get_chem
 def depict(body: DepictRequest, chemistry: ChemistryService = Depends(get_chemistry)):
     """2D drawing of the structure as entered, on a transparent background."""
     try:
-        image = chemistry.depict(body.smiles, width=body.width, height=body.height, theme=body.theme, fmt=body.format)
+        image = chemistry.depict(body.smiles, width=body.width, height=body.height, theme=body.theme,
+                                 fmt=body.format, highlight_atoms=body.highlight_atoms)
     except InvalidSmilesError as exc:
         raise HTTPException(422, str(exc))
     media_type = "image/png" if body.format == "png" else "image/svg+xml"

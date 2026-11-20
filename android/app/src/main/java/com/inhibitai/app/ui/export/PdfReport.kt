@@ -35,8 +35,9 @@ object PdfReport {
     private val MUTED = Color.rgb(100, 100, 110)
     private val RULE = Color.rgb(220, 218, 230)
 
-    suspend fun share(context: Context, compound: Compound, structure: Bitmap?) {
-        val file = withContext(Dispatchers.IO) { write(context, compound, structure) }
+    /** [author] is the line saying who ran the prediction, e.g. "Dr. Noor - University of Sharjah". */
+    suspend fun share(context: Context, compound: Compound, structure: Bitmap?, author: String? = null) {
+        val file = withContext(Dispatchers.IO) { write(context, compound, structure, author) }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val send = Intent(Intent.ACTION_SEND)
             .setType("application/pdf")
@@ -46,10 +47,10 @@ object PdfReport {
         context.startActivity(Intent.createChooser(send, "Save or share the report"))
     }
 
-    private fun write(context: Context, c: Compound, structure: Bitmap?): File {
+    private fun write(context: Context, c: Compound, structure: Bitmap?, author: String?): File {
         val document = PdfDocument()
         val page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create())
-        Page(page.canvas).draw(c, structure)
+        Page(page.canvas).draw(c, structure, author)
         document.finishPage(page)
 
         val dir = File(context.cacheDir, "reports").apply { mkdirs() }
@@ -64,7 +65,7 @@ object PdfReport {
         private var y = MARGIN
         private val width = PAGE_WIDTH - 2 * MARGIN
 
-        fun draw(c: Compound, structure: Bitmap?) {
+        fun draw(c: Compound, structure: Bitmap?, author: String?) {
             text("InhibitAI", 22f, PURPLE, bold = true)
             text("PARP-1 inhibitor activity prediction", 12f, MUTED)
             y += 6f
@@ -106,7 +107,29 @@ object PdfReport {
             row("Target · model", "${c.target} · ${c.modelVersion}")
             y = maxOf(top + box, ry) + 14f
 
-            text("ADME: predictions are not available yet.", 10f, MUTED)
+            val adme = c.adme
+            if (adme == null) {
+                text("ADME: not available for this result.", 10f, MUTED)
+            } else {
+                text("ADME (computed from the structure, not a trained model)", 11f, TEXT, bold = true)
+                text(
+                    "Absorption ${adme.absorption.label}  ·  Distribution ${adme.distribution.label}  ·  " +
+                        "Metabolism ${adme.metabolism.label}  ·  Toxicity alerts ${adme.toxicity.label}",
+                    10f, TEXT,
+                )
+                adme.properties?.let { p ->
+                    val numbers = listOfNotNull(
+                        p.molecularWeight?.let { String.format(Locale.US, "MW %.1f", it) },
+                        p.logP?.let { String.format(Locale.US, "logP %.2f", it) },
+                        p.tpsa?.let { String.format(Locale.US, "TPSA %.1f", it) },
+                        p.hbd?.let { "HBD $it" },
+                        p.hba?.let { "HBA $it" },
+                        p.qed?.let { String.format(Locale.US, "QED %.2f", it) },
+                    )
+                    if (numbers.isNotEmpty()) text(numbers.joinToString("   ·   "), 9.5f, MUTED)
+                }
+                adme.alerts.take(3).forEach { text("Alert: ${it.description} (${it.catalog})", 9.5f, MUTED) }
+            }
             val notes = reliabilityNotes(c)
             if (notes.isNotEmpty()) {
                 y += 4f
@@ -122,6 +145,8 @@ object PdfReport {
             )
             text("Predicted ${c.formattedDate}  ·  Report created " +
                 LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMM d, yyyy · hh:mm a", Locale.US)), 9f, MUTED)
+            // Who ran it, so a shared report says where it came from.
+            author?.takeIf { it.isNotBlank() }?.let { text("Run by $it", 9f, MUTED) }
         }
 
         private fun text(value: String, size: Float, color: Int, bold: Boolean = false, mono: Boolean = false) {

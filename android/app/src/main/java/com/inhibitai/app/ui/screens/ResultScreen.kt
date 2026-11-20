@@ -7,12 +7,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Star
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inhibitai.app.data.Compound
 import com.inhibitai.app.data.PredictionStatus
+import com.inhibitai.app.ui.ExplainState
 import com.inhibitai.app.ui.InhibitViewModel
 import com.inhibitai.app.ui.components.*
 import com.inhibitai.app.ui.export.PdfReport
@@ -62,6 +65,7 @@ fun ResultScreen(
     val scope = rememberCoroutineScope()
     var renaming by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+    var chatting by remember { mutableStateOf(false) }
     MainScaffold(
         selected = NavTab.HOME,
         onTab = onTab,
@@ -105,6 +109,7 @@ fun ResultScreen(
             VSpace(16.dp)
             KeyInformationCard(compound)
             VSpace(16.dp)
+            WhyThisResultCard(vm, compound, onLearnMore = { chatting = true })
             AdmeCard(compound)
             VSpace(16.dp)
             SimilarCompoundsCard(vm, compound, onOpenCompound)
@@ -128,7 +133,7 @@ fun ResultScreen(
                                 } catch (e: Exception) {
                                     null // the report still works without the drawing
                                 }
-                                PdfReport.share(context, compound, structure)
+                                PdfReport.share(context, compound, structure, author = vm.reportAuthor)
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Couldn't create the PDF: ${e.message}", Toast.LENGTH_LONG).show()
                             } finally {
@@ -143,6 +148,10 @@ fun ResultScreen(
             GradientButton("Predict Another Compound", onPredictAnother, leadingIcon = Icons.Filled.Autorenew, height = 64.dp)
             VSpace(24.dp)
         }
+    }
+
+    if (chatting && compound != null) {
+        ResultChatSheet(vm, compound, onDismiss = { chatting = false })
     }
 
     if (renaming && compound != null) {
@@ -165,7 +174,10 @@ private fun ResultHeader(c: Compound) {
                 .clip(CircleShape)
                 .background(Color.White),
         ) {
-            StructureImage(c.canonicalSmiles, dark = false, Modifier.fillMaxSize().padding(18.dp))
+            StructureImage(
+                c.canonicalSmiles, dark = false, Modifier.fillMaxSize().padding(18.dp),
+                label = "Structure of ${c.name}",
+            )
         }
         HSpace(16.dp)
         Column(Modifier.weight(1f)) {
@@ -187,7 +199,7 @@ private fun ResultHeader(c: Compound) {
                 HSpace(8.dp)
                 Text(
                     c.status.label, fontSize = if (c.status.label.length > 8) 19.sp else 22.sp, color = color,
-                    fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false,
+                    fontWeight = FontWeight.Medium, maxLines = 2,
                 )
             }
             VSpace(8.dp)
@@ -205,12 +217,22 @@ private fun ConfidenceCard(confidence: Int, color: Color) {
     val fraction by animateFloatAsState(if (started) confidence / 100f else 0f, tween(900), label = "confidence")
     GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Confidence", fontSize = 14.sp, color = TextSecondary, maxLines = 1, softWrap = false,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-                )
+            val label = @Composable { modifier: Modifier ->
+                Text("Confidence", fontSize = 14.sp, color = TextSecondary, maxLines = 2, modifier = modifier)
+            }
+            val value = @Composable {
                 Text("$confidence%", fontSize = 18.sp, color = TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1)
+            }
+            // This card shares its row with the structure, so at a large font size the two
+            // pieces go one above the other rather than fighting over the width.
+            if (largeText()) {
+                label(Modifier)
+                value()
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    label(Modifier.weight(1f))
+                    value()
+                }
             }
             VSpace(10.dp)
             Box(
@@ -218,7 +240,7 @@ private fun ConfidenceCard(confidence: Int, color: Color) {
                     .fillMaxWidth()
                     .height(12.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(Color(0xFF26223A)),
+                    .background(TrackBg),
             ) {
                 Box(
                     Modifier
@@ -246,24 +268,184 @@ private fun KeyInformationCard(c: Compound) {
         Column(Modifier.padding(vertical = 20.dp)) {
             CardTitle("Key Information", trailing = { Icon(Icons.Outlined.Info, null, tint = TextSecondary, modifier = Modifier.size(28.dp)) })
             VSpace(18.dp)
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                InfoCell(Icons.Outlined.TrackChanges, PurpleLight, "Target", c.target, TextPrimary, Modifier.weight(1f))
-                CellDivider()
-                InfoCell(Icons.Outlined.Psychology, Blue, "Prediction", c.status.label, statusCol, Modifier.weight(1f))
-                CellDivider()
-                InfoCell(
-                    Icons.Outlined.VerifiedUser, reliabilityColor,
-                    "Reliability", c.reliability ?: "—", reliabilityColor, Modifier.weight(1f),
+            InfoCells(
+                listOf(
+                    { m -> InfoCell(Icons.Outlined.TrackChanges, PurpleLight, "Target", c.target, TextPrimary, m) },
+                    { m -> InfoCell(Icons.Outlined.Psychology, Blue, "Prediction", c.status.label, statusCol, m) },
+                    { m ->
+                        InfoCell(
+                            Icons.Outlined.VerifiedUser, reliabilityColor,
+                            "Reliability", c.reliability ?: "—", reliabilityColor, m,
+                        )
+                    },
+                    { m -> InfoCell(Icons.Outlined.Science, Yellow, "Model", c.modelVersion, TextPrimary, m) },
                 )
-                CellDivider()
-                InfoCell(Icons.Outlined.Science, Yellow, "Model", c.modelVersion, TextPrimary, Modifier.weight(1f))
-            }
+            )
         }
     }
 }
 
+/**
+ * Which fragments of the molecule moved the score, and by how much (the Interpretability quality
+ * goal, report section 5.2). The weights come from the model itself: each fingerprint bit is
+ * switched off in turn and the drop in score is what that piece of chemistry was worth.
+ */
+@Composable
+private fun WhyThisResultCard(vm: InhibitViewModel, c: Compound, onLearnMore: () -> Unit) {
+    val state by produceState<ExplainState>(ExplainState.Loading, c.id) { value = vm.explain(c) }
+    var selected by remember(c.id) { mutableIntStateOf(0) }
+
+    GlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 20.dp)) {
+            CardTitle("Why this result", trailing = {
+                Icon(Icons.Outlined.Lightbulb, null, tint = PurpleLight, modifier = Modifier.size(26.dp))
+            })
+            VSpace(14.dp)
+            when (val s = state) {
+                ExplainState.Loading -> Row(
+                    Modifier.padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                    HSpace(12.dp)
+                    Text("Working out which fragments moved the score…", fontSize = 15.sp, color = TextSecondary)
+                }
+
+                is ExplainState.Unavailable -> Text(
+                    s.message, fontSize = 15.sp, lineHeight = 21.sp, color = TextSecondary,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+
+                is ExplainState.Ready -> {
+                    val explanation = s.explanation
+                    val fragments = explanation.fragments
+                    if (fragments.isEmpty()) {
+                        Text(
+                            "No single fragment of this molecule changed the score on its own.",
+                            fontSize = 15.sp, lineHeight = 21.sp, color = TextSecondary,
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                        return@Column
+                    }
+                    val shown = fragments.take(6)
+                    val chosen = shown[selected.coerceIn(shown.indices)]
+                    Text(
+                        "Tap a fragment to see where it is in the structure.",
+                        fontSize = 14.sp, color = TextMuted, modifier = Modifier.padding(horizontal = 20.dp),
+                    )
+                    VSpace(12.dp)
+                    // Drawn light, since the shading is designed to read against a white background.
+                    val shape = RoundedCornerShape(16.dp)
+                    Box(
+                        Modifier
+                            .padding(horizontal = 20.dp)
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(shape)
+                            .background(Color.White)
+                            .border(1.dp, CardBorder, shape),
+                    ) {
+                        StructureImage(
+                            explanation.canonicalSmiles, dark = false,
+                            modifier = Modifier.fillMaxSize().padding(14.dp),
+                            highlightAtoms = chosen.atoms,
+                            label = "Structure of ${c.name} with the chosen fragment shaded",
+                        )
+                    }
+                    VSpace(16.dp)
+                    val strongest = shown.maxOf { kotlin.math.abs(it.weight) }
+                    shown.forEachIndexed { i, fragment ->
+                        FragmentRow(fragment, strongest, i == selected) { selected = i }
+                    }
+                    VSpace(12.dp)
+                    Text(
+                        "Each weight is how much the model's score drops when that piece of chemistry is " +
+                            "taken away, so a positive weight pushed this compound towards Active. The " +
+                            "fragments are the model's own features, not a chemist's reading of the molecule.",
+                        fontSize = 13.sp, lineHeight = 19.sp, color = TextMuted,
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                    )
+                    VSpace(14.dp)
+                    // Opens the assistant, which explains these same numbers in plain English.
+                    OutlineActionButton(
+                        Icons.AutoMirrored.Outlined.Chat, "Learn more", onClick = onLearnMore,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    )
+                }
+            }
+        }
+    }
+    VSpace(16.dp)
+}
+
+/** One fragment: its structure as SMILES, a bar for its weight, and the signed number. */
+@Composable
+private fun FragmentRow(
+    fragment: com.inhibitai.app.data.Fragment,
+    strongest: Float,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val up = fragment.weight > 0
+    val color = if (up) Green else Red
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(if (selected) PurpleTint else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                fragment.fragment.ifBlank { "—" }, fontSize = 15.sp, fontFamily = FontFamily.Monospace,
+                color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            VSpace(5.dp)
+            // Bar lengths are relative to the strongest fragment shown.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(TrackBg),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(
+                            if (strongest <= 0f) 0f
+                            else (kotlin.math.abs(fragment.weight) / strongest).coerceIn(0f, 1f),
+                        )
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(50))
+                        .background(color),
+                )
+            }
+            VSpace(5.dp)
+            Text(
+                buildString {
+                    append(if (up) "Towards Active" else "Towards Inactive")
+                    if (fragment.occurrences > 1) append("  ·  ${fragment.occurrences} places")
+                },
+                fontSize = 12.sp, color = TextSecondary,
+            )
+        }
+        HSpace(12.dp)
+        Text(
+            String.format(Locale.US, "%+.3f", fragment.weight),
+            fontSize = 16.sp, fontWeight = FontWeight.Medium, color = color,
+        )
+    }
+}
+
+/**
+ * ADME computed from the structure: the four headline levels, the numbers behind them, and the
+ * rules that produced each verdict. It says plainly that these are published rules rather than a
+ * trained model, because the app has one trained model and it predicts activity, not ADME.
+ */
 @Composable
 private fun AdmeCard(c: Compound) {
+    var showWorking by remember(c.id) { mutableStateOf(false) }
     GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = 20.dp)) {
             CardTitle("ADME Overview", trailing = { Icon(Icons.Outlined.Info, null, tint = TextSecondary, modifier = Modifier.size(28.dp)) })
@@ -271,21 +453,132 @@ private fun AdmeCard(c: Compound) {
             val adme = c.adme
             if (adme == null) {
                 Text(
-                    "ADME predictions are not available yet.", fontSize = 16.sp, color = TextSecondary,
+                    "ADME isn't available for this result yet. Run the prediction again to work it out.",
+                    fontSize = 16.sp, lineHeight = 22.sp, color = TextSecondary,
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
                 return@Column
             }
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                InfoCell(Icons.Outlined.ControlCamera, PurpleLight, "Absorption", adme.absorption.label, admeColor(adme.absorption), Modifier.weight(1f))
-                CellDivider()
-                InfoCell(Icons.Outlined.RadioButtonChecked, PurpleLight, "Distribution", adme.distribution.label, admeColor(adme.distribution), Modifier.weight(1f))
-                CellDivider()
-                InfoCell(Icons.Outlined.Science, PurpleLight, "Metabolism", adme.metabolism.label, admeColor(adme.metabolism), Modifier.weight(1f))
-                CellDivider()
-                InfoCell(Icons.Outlined.VerifiedUser, PurpleLight, "Toxicity", adme.toxicity.label, toxicityColor(adme.toxicity), Modifier.weight(1f))
+            InfoCells(
+                listOf(
+                    { m ->
+                        InfoCell(Icons.Outlined.ControlCamera, PurpleLight, "Absorption", adme.absorption.label,
+                            admeColor(adme.absorption), m)
+                    },
+                    { m ->
+                        InfoCell(Icons.Outlined.RadioButtonChecked, PurpleLight, "Distribution", adme.distribution.label,
+                            admeColor(adme.distribution), m)
+                    },
+                    { m ->
+                        InfoCell(Icons.Outlined.Science, PurpleLight, "Metabolism", adme.metabolism.label,
+                            admeColor(adme.metabolism), m)
+                    },
+                    { m ->
+                        InfoCell(Icons.Outlined.VerifiedUser, PurpleLight, "Toxicity", adme.toxicity.label,
+                            toxicityColor(adme.toxicity), m)
+                    },
+                )
+            )
+            adme.properties?.let { p ->
+                VSpace(18.dp)
+                HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = CardBorder)
+                VSpace(14.dp)
+                // The numbers every verdict above was read off.
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    p.molecularWeight?.let { PropertyChip("MW", String.format(Locale.US, "%.0f", it)) }
+                    p.logP?.let { PropertyChip("logP", String.format(Locale.US, "%.1f", it)) }
+                    p.tpsa?.let { PropertyChip("TPSA", String.format(Locale.US, "%.0f", it)) }
+                    p.hbd?.let { PropertyChip("HBD", "$it") }
+                    p.hba?.let { PropertyChip("HBA", "$it") }
+                    p.rotatableBonds?.let { PropertyChip("Rot. bonds", "$it") }
+                    p.qed?.let { PropertyChip("QED", String.format(Locale.US, "%.2f", it)) }
+                }
+            }
+            if (adme.alerts.isNotEmpty()) {
+                VSpace(14.dp)
+                Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    adme.alerts.take(4).forEach { alert ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.WarningAmber, null, tint = Yellow, modifier = Modifier.size(18.dp))
+                            HSpace(8.dp)
+                            Text(
+                                "${alert.description} (${alert.catalog} alert)",
+                                fontSize = 14.sp, color = TextSecondary, maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+            if (adme.rules.isNotEmpty()) {
+                VSpace(12.dp)
+                Text(
+                    if (showWorking) "Hide the rules  ▴" else "How these were worked out  ▾",
+                    fontSize = 15.sp, color = PurpleLight,
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showWorking = !showWorking }
+                        .padding(vertical = 6.dp),
+                )
+                if (showWorking) {
+                    VSpace(4.dp)
+                    Column(
+                        Modifier.padding(horizontal = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        adme.rules.forEach { rule ->
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (rule.passed) Icons.Outlined.CheckCircle else Icons.Outlined.Cancel,
+                                        null, tint = if (rule.passed) Green else Yellow,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    HSpace(8.dp)
+                                    Text(rule.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                                }
+                                Text(
+                                    rule.detail, fontSize = 13.sp, lineHeight = 19.sp, color = TextSecondary,
+                                    modifier = Modifier.padding(start = 26.dp, top = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (adme.ruleBased) {
+                VSpace(14.dp)
+                Text(
+                    "Worked out from the structure with published rules (Lipinski, Veber, PAINS and " +
+                        "Brenk alerts). These are not predictions from a trained ADME model, and not " +
+                        "measured values.",
+                    fontSize = 13.sp, lineHeight = 19.sp, color = TextMuted,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
             }
         }
+    }
+}
+
+/** One physicochemical number, e.g. "logP 2.4". */
+@Composable
+private fun PropertyChip(label: String, value: String) {
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        Modifier
+            .clip(shape)
+            .background(PurpleTint)
+            .border(1.dp, CardBorder, shape)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+        Text(label, fontSize = 12.sp, color = TextSecondary)
     }
 }
 
@@ -468,6 +761,39 @@ private fun CellDivider() {
     Box(Modifier.fillMaxHeight().width(1.dp).background(CardBorder))
 }
 
+/**
+ * A strip of equal cells. Four across normally; two rows of two once the phone's font size is
+ * turned up, where quarter-width columns would cut their labels in half.
+ */
+@Composable
+private fun InfoCells(cells: List<@Composable (Modifier) -> Unit>) {
+    if (!largeText()) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            cells.forEachIndexed { i, cell ->
+                if (i > 0) CellDivider()
+                cell(Modifier.weight(1f))
+            }
+        }
+        return
+    }
+    Column(Modifier.fillMaxWidth()) {
+        cells.chunked(2).forEachIndexed { rowIndex, pair ->
+            if (rowIndex > 0) {
+                VSpace(16.dp)
+                HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = CardBorder)
+                VSpace(16.dp)
+            }
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                pair.forEachIndexed { i, cell ->
+                    if (i > 0) CellDivider()
+                    cell(Modifier.weight(1f))
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
 @Composable
 private fun InfoCell(
     icon: ImageVector,
@@ -480,11 +806,11 @@ private fun InfoCell(
     Column(modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, null, tint = iconTint, modifier = Modifier.size(40.dp))
         VSpace(12.dp)
-        Text(label, fontSize = 13.sp, color = TextSecondary, maxLines = 1, textAlign = TextAlign.Center)
+        Text(label, fontSize = 13.sp, color = TextSecondary, maxLines = 2, textAlign = TextAlign.Center)
         VSpace(6.dp)
         Text(
             value, fontSize = if (value.length > 8) 15.sp else 18.sp, color = valueColor, fontWeight = FontWeight.Medium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
         )
     }
 }

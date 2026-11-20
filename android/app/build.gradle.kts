@@ -55,6 +55,10 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        // Robolectric needs the app's own resources and manifest to stand up an Application.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -86,4 +90,10 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Unit tests: plain JVM where possible, Robolectric where a Context is unavoidable.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
 }

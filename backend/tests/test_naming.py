@@ -3,6 +3,7 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 
@@ -145,11 +146,15 @@ def test_database_from_the_first_release_is_upgraded(tmp_path):
         conn.execute(text("INSERT INTO users (email, password_hash, full_name, next_compound_number, created_at) "
                           "VALUES ('old@example.com', 'x', 'Old', 1, '2026-10-01 00:00:00')"))
     init_db(engine)
-    assert "google_sub" in {c["name"] for c in inspect(engine).get_columns("users")}
-    assert "password_reset_codes" in inspect(engine).get_table_names()
+    columns = {c["name"] for c in inspect(engine).get_columns("users")}
+    tables = set(inspect(engine).get_table_names())
+    assert {"google_sub", "phone", "phone_verified_at"} <= columns
+    assert {"password_reset_codes", "phone_verification_codes"} <= tables
+    head = ScriptDirectory(str(MIGRATIONS_DIR)).get_current_head()
     with engine.connect() as conn:
         assert conn.execute(text("SELECT email FROM users")).scalar() == "old@example.com"
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0002"
+        # Brought all the way up to date, whatever the newest migration happens to be.
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == head
 
 
 def test_models_and_migrations_agree(tmp_path):

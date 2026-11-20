@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import timedelta
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -14,6 +15,8 @@ from app.domain.naming import PubChemNamer
 from app.services.auth import AuthError, AuthService, TokenService
 from app.services.email import EmailSender
 from app.services.google import GoogleTokenVerifier
+from app.services.llm import ChatClient
+from app.services.phone import SmsSender
 from app.services.predictions import PredictionService
 from app.services.ratelimit import AuthRateLimits
 
@@ -31,7 +34,9 @@ class Container:
     auth_limits: AuthRateLimits
     namer: PubChemNamer
     email_sender: EmailSender | None  # None: password reset by email is switched off
+    sms_sender: SmsSender  # no SMS provider is configured, so codes go to the server log
     google: GoogleTokenVerifier | None  # None: Google sign-in isn't configured
+    chat: ChatClient  # answers "Learn more" on a result; switched off until a model is configured
 
 
 def get_container(request: Request) -> Container:
@@ -49,7 +54,11 @@ def get_chemistry(container: Container = Depends(get_container)) -> ChemistrySer
 
 def get_auth_service(session: Session = Depends(get_session),
                      container: Container = Depends(get_container)) -> AuthService:
-    return AuthService(session, container.tokens, container.settings.signup_allowlist)
+    idle_minutes = container.settings.session_idle_minutes
+    return AuthService(
+        session, container.tokens, container.settings.signup_allowlist,
+        idle_window=timedelta(minutes=idle_minutes) if idle_minutes > 0 else None,
+    )
 
 
 def get_prediction_service(session: Session = Depends(get_session),

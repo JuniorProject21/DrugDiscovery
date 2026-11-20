@@ -37,7 +37,7 @@ def test_production_settings_that_pass(toy_bundle):
 def test_signup_can_be_limited_to_the_team(make_client):
     client = make_client(allowed_signup_emails="@sharjah.ac.ae, Supervisor@Example.com")
     outsider = client.post("/api/v1/auth/register", json={
-        "email": "someone@gmail.com", "password": "long-enough-pw", "full_name": "Someone"})
+        "email": "someone@gmail.com", "password": "Long-enough-pw1", "full_name": "Someone"})
     assert outsider.status_code == 403
     assert "invited" in outsider.json()["detail"]
     register(client, email="u22200731@sharjah.ac.ae")
@@ -47,7 +47,7 @@ def test_signup_can_be_limited_to_the_team(make_client):
 def test_repeated_logins_are_rate_limited(make_client):
     client = make_client()
     register(client)
-    wrong = {"email": "noor@example.com", "password": "not-the-password"}
+    wrong = {"email": "noor@example.com", "password": "Not-the-password1"}
     for _ in range(10):
         assert client.post("/api/v1/auth/login", json=wrong).status_code == 401
     blocked = client.post("/api/v1/auth/login", json=wrong)
@@ -56,7 +56,7 @@ def test_repeated_logins_are_rate_limited(make_client):
     # Other accounts are not locked out by someone guessing this one's password.
     register(client, email="iman@example.com")
     assert client.post("/api/v1/auth/login", json={
-        "email": "iman@example.com", "password": "correct-horse"}).status_code == 200
+        "email": "iman@example.com", "password": "Correct-horse9"}).status_code == 200
 
 
 def test_rate_limiter_window():

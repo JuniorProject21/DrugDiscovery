@@ -49,13 +49,34 @@ NO_PASSWORD = "!no-password"
 
 
 class User(Base):
+    """An account, identified by an email address, a phone number, or both.
+
+    Exactly one of them may be empty: accounts created with an email have no phone until they add
+    one, and accounts created with a phone number have no email.
+    """
+
     __tablename__ = "users"
-    __table_args__ = (Index("ix_users_google_sub", "google_sub", unique=True),)
+    __table_args__ = (
+        Index("ix_users_google_sub", "google_sub", unique=True),
+        Index("ix_users_phone", "phone", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(320), unique=True, index=True)
+    # Normalised to E.164 ("+971501234567") by app.services.phone.normalise_phone.
+    phone: Mapped[str | None] = mapped_column(String(20))
+    # Set once the sign-up code sent to `phone` has been entered correctly.
+    phone_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # When this account last made a request. Used to end an idle session; null until its
+    # first request after signing in.
+    last_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     password_hash: Mapped[str] = mapped_column(String(100))
     full_name: Mapped[str] = mapped_column(String(200))
+    # Optional profile details, all set by the user on the Account screen.
+    institution: Mapped[str | None] = mapped_column(String(200))
+    role: Mapped[str | None] = mapped_column(String(40))  # student | researcher | supervisor | other
+    research_area: Mapped[str | None] = mapped_column(String(200))
+    age: Mapped[int | None] = mapped_column(Integer)
     # Google's stable account id ("sub" claim) once the user has signed in with Google.
     google_sub: Mapped[str | None] = mapped_column(String(255))
     # Counter behind the per-user display names (XYZ-001, XYZ-002, ...).
@@ -66,11 +87,30 @@ class User(Base):
     def has_password(self) -> bool:
         return self.password_hash != NO_PASSWORD
 
+    @property
+    def phone_verified(self) -> bool:
+        return self.phone_verified_at is not None
+
 
 class PasswordResetCode(Base):
     """A 6-digit code emailed to reset a password. Only an HMAC of the code is stored."""
 
     __tablename__ = "password_reset_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class PhoneVerificationCode(Base):
+    """A 6-digit code sent to a phone number to prove the person owns it. Same shape as
+    PasswordResetCode, and likewise only an HMAC of the code is stored."""
+
+    __tablename__ = "phone_verification_codes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)

@@ -1,6 +1,10 @@
 package com.inhibitai.app.navigation
 
+import android.Manifest
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,10 +25,13 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.inhibitai.app.ui.AuthState
 import com.inhibitai.app.ui.InhibitViewModel
+import com.inhibitai.app.ui.components.BellState
+import com.inhibitai.app.ui.components.LocalBell
 import com.inhibitai.app.ui.components.LocalStructureImageLoader
 import com.inhibitai.app.ui.components.MainScaffold
 import com.inhibitai.app.ui.components.NavTab
 import com.inhibitai.app.ui.components.StructureImageLoader
+import com.inhibitai.app.ui.notifications.Notifications
 import com.inhibitai.app.ui.screens.*
 import com.inhibitai.app.ui.theme.Bg
 
@@ -35,6 +42,8 @@ private object Routes {
     const val FORGOT_PASSWORD = "forgot-password"
     const val RESULT = "result"
     const val ACCOUNT = "account"
+    const val BATCH = "batch"
+    const val NOTIFICATIONS = "notifications"
     val AUTH = setOf(ONBOARDING, LOGIN, SIGN_UP, FORGOT_PASSWORD)
 }
 
@@ -58,6 +67,18 @@ fun InhibitApp(vm: InhibitViewModel = viewModel()) {
             nav.navigate(NavTab.HOME.route) { popUpTo(nav.graph.id) { inclusive = true } }
         } else if (!signedIn && !onAuthScreen) {
             nav.navigate(Routes.ONBOARDING) { popUpTo(nav.graph.id) { inclusive = true } }
+        }
+    }
+
+    // Android 13+ asks before an app may post notifications; this is the one place it comes up.
+    val askForNotifications = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* either answer is fine: the app simply doesn't post notifications if refused */ }
+    LaunchedEffect(authState) {
+        if (authState is AuthState.SignedIn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !Notifications.allowed(context)
+        ) {
+            askForNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
@@ -92,8 +113,14 @@ fun InhibitApp(vm: InhibitViewModel = viewModel()) {
 
     fun openResult(id: String) = nav.navigate("${Routes.RESULT}/$id")
 
-    val structureLoader = remember(vm) { StructureImageLoader { smiles, w, h, dark -> vm.structureImage(smiles, w, h, dark) } }
-    CompositionLocalProvider(LocalStructureImageLoader provides structureLoader) {
+    val structureLoader = remember(vm) {
+        StructureImageLoader { smiles, w, h, dark, atoms -> vm.structureImage(smiles, w, h, dark, atoms) }
+    }
+    val bell = BellState(
+        unread = vm.unreadNotifications,
+        open = { nav.navigate(Routes.NOTIFICATIONS) { launchSingleTop = true } },
+    )
+    CompositionLocalProvider(LocalStructureImageLoader provides structureLoader, LocalBell provides bell) {
         NavHost(
             navController = nav,
             startDestination = if (authState is AuthState.SignedIn) NavTab.HOME.route else Routes.ONBOARDING,
@@ -115,13 +142,22 @@ fun InhibitApp(vm: InhibitViewModel = viewModel()) {
                         nav.navigate(Routes.SIGN_UP) { popUpTo(Routes.ONBOARDING) }
                     },
                     onForgotPassword = { nav.navigate(Routes.FORGOT_PASSWORD) },
+                    onForgotPasswordByPhone = { nav.navigate("${Routes.FORGOT_PASSWORD}?phone=true") },
                 )
             }
-            composable(Routes.FORGOT_PASSWORD) {
-                ForgotPasswordScreen(vm, onBack = {
-                    vm.clearPasswordReset()
-                    nav.popBackStack()
-                })
+            composable(
+                "${Routes.FORGOT_PASSWORD}?phone={phone}",
+                arguments = listOf(navArgument("phone") { type = NavType.StringType; defaultValue = "false" }),
+            ) { entry ->
+                ForgotPasswordScreen(
+                    vm,
+                    onBack = {
+                        vm.clearPasswordReset()
+                        vm.clearPhoneReset()
+                        nav.popBackStack()
+                    },
+                    startWithPhone = entry.arguments?.getString("phone") == "true",
+                )
             }
             composable(Routes.SIGN_UP) {
                 SignUpScreen(
@@ -154,7 +190,29 @@ fun InhibitApp(vm: InhibitViewModel = viewModel()) {
             }
             composable(NavTab.PREDICT.route) {
                 MainScaffold(NavTab.PREDICT, { goTab(it) }) { padding ->
-                    PredictScreen(vm, padding, onResult = { openResult(it) })
+                    PredictScreen(
+                        vm, padding,
+                        onResult = { openResult(it) },
+                        onBatch = { nav.navigate(Routes.BATCH) },
+                    )
+                }
+            }
+            composable(Routes.NOTIFICATIONS) {
+                MainScaffold(NavTab.HOME, { goTab(it) }) { padding ->
+                    NotificationsScreen(
+                        vm, padding,
+                        onBack = { nav.popBackStack() },
+                        onOpenCompound = { openResult(it) },
+                    )
+                }
+            }
+            composable(Routes.BATCH) {
+                MainScaffold(NavTab.PREDICT, { goTab(it) }) { padding ->
+                    BatchScreen(
+                        vm, padding,
+                        onBack = { nav.popBackStack() },
+                        onOpenCompound = { openResult(it) },
+                    )
                 }
             }
             composable(NavTab.INSIGHTS.route) {

@@ -74,6 +74,7 @@ You also need the matching server setting and an Android OAuth client; see secti
 
 ## Not available yet
 
-- **Sign in with Apple:** needs a paid Apple developer account.
+- **Sign in with Apple:** dropped, since it needs a paid Apple developer account. Sign-in is by
+  email, phone number or Google.
 - **ADME card:** shows "not available yet" until the backend has an ADME model.
 - **Notifications:** there are none; the bell just says so.

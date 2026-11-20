@@ -14,7 +14,7 @@ def test_health_is_public_and_does_not_load_the_model(make_client, toy_bundle):
 def test_register_login_and_me(make_client):
     client = make_client()
     register(client)
-    response = client.post("/api/v1/auth/login", json={"email": "NOOR@example.com", "password": "correct-horse"})
+    response = client.post("/api/v1/auth/login", json={"email": "NOOR@example.com", "password": "Correct-horse9"})
     assert response.status_code == 200
     token = response.json()["access_token"]
     me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
@@ -26,9 +26,9 @@ def test_auth_errors(make_client):
     client = make_client()
     register(client)
     assert client.post("/api/v1/auth/register", json={
-        "email": "noor@example.com", "password": "another-password", "full_name": "X"}).status_code == 409
+        "email": "noor@example.com", "password": "Another-password1", "full_name": "X"}).status_code == 409
     assert client.post("/api/v1/auth/login", json={
-        "email": "noor@example.com", "password": "wrong-password"}).status_code == 401
+        "email": "noor@example.com", "password": "Wrong-password1"}).status_code == 401
     short = client.post("/api/v1/auth/register", json={"email": "a@example.com", "password": "short", "full_name": "A"})
     assert short.status_code == 422
     assert short.json()["detail"].startswith("password:")

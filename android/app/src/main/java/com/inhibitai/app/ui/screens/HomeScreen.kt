@@ -45,9 +45,9 @@ fun HomeScreen(
                 .padding(horizontal = 20.dp),
         ) {
             VSpace(12.dp)
-            AppHeader(onBellClick = { Toast.makeText(context, "No new notifications", Toast.LENGTH_SHORT).show() })
+            AppHeader()
             VSpace(30.dp)
-            Text("Welcome back,", fontSize = 26.sp, color = Color(0xFFD9D5EA))
+            Text("Welcome back,", fontSize = 26.sp, color = TextSoft)
             Text(vm.userName, fontSize = 50.sp, lineHeight = 56.sp, fontWeight = FontWeight.Bold, color = PurpleLight)
             VSpace(8.dp)
             Text(
@@ -58,13 +58,20 @@ fun HomeScreen(
                 VSpace(16.dp)
                 ErrorBanner(it, retrying = vm.isLoading, onRetry = vm::refresh)
             }
+            // The server couldn't be reached, so these results came from this device.
+            vm.offlineNotice?.let {
+                VSpace(16.dp)
+                OfflineBanner(it, retrying = vm.isLoading, onRetry = vm::refresh)
+            }
             VSpace(28.dp)
             TotalPredictedCard(vm.total, onClick = { onOpenHistory("all") })
             VSpace(14.dp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                MiniStatCard(vm.activeCount, PredictionStatus.ACTIVE, { onOpenHistory("active") }, Modifier.weight(1f))
-                MiniStatCard(vm.inactiveCount, PredictionStatus.INACTIVE, { onOpenHistory("inactive") }, Modifier.weight(1f))
-            }
+            AdaptiveCells(
+                listOf(
+                    { m -> MiniStatCard(vm.activeCount, PredictionStatus.ACTIVE, { onOpenHistory("active") }, m) },
+                    { m -> MiniStatCard(vm.inactiveCount, PredictionStatus.INACTIVE, { onOpenHistory("inactive") }, m) },
+                )
+            )
             VSpace(14.dp)
             NewPredictionBanner(onNewPrediction)
             VSpace(26.dp)
@@ -91,10 +98,12 @@ fun HomeScreen(
                 }
             }
             VSpace(14.dp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                InfoTile(Icons.Outlined.BookmarkBorder, "Saved Results", "${vm.savedCount}", { onOpenHistory("saved") }, Modifier.weight(1f))
-                InfoTile(Icons.Outlined.BarChart, "This Week", "${vm.within(7).size}", onOpenInsights, Modifier.weight(1f))
-            }
+            AdaptiveCells(
+                listOf(
+                    { m -> InfoTile(Icons.Outlined.BookmarkBorder, "Saved Results", "${vm.savedCount}", { onOpenHistory("saved") }, m) },
+                    { m -> InfoTile(Icons.Outlined.BarChart, "This Week", "${vm.within(7).size}", onOpenInsights, m) },
+                )
+            )
             VSpace(24.dp)
         }
     }
@@ -109,16 +118,19 @@ private fun RecentRow(c: Compound, onOpen: () -> Unit, onToggleSave: () -> Unit,
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MoleculeThumb(c.canonicalSmiles, Modifier.size(width = 72.dp, height = 62.dp))
-        HSpace(14.dp)
+        if (!largeText()) {
+            // At a large font size the name and date need the whole row.
+            MoleculeThumb(c.canonicalSmiles, Modifier.size(width = 72.dp, height = 62.dp))
+            HSpace(14.dp)
+        }
         Column(Modifier.weight(1f)) {
-            Text(c.name, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1,
+            Text(c.name, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 2,
                 overflow = TextOverflow.Ellipsis)
             VSpace(4.dp)
             Text(c.formattedDate, fontSize = 13.sp, color = TextSecondary, maxLines = 2)
         }
         HSpace(8.dp)
         StatusPill(c.status, compact = true)
-        CompoundMenu(c.isSaved, onOpen, onToggleSave, onDelete)
+        CompoundMenu(c.isSaved, onOpen, onToggleSave, onDelete, label = "More actions for ${c.name}")
     }
 }

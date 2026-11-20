@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.inhibitai.app.ui.theme.ThemeState
 import kotlin.math.min
 
 /** A glossy sphere in the decorative background. x/y are fractions of the box, depth 0..1 (1 = closest). */
@@ -52,14 +53,21 @@ val OnboardingScene = MoleculeScene(
     edges = listOf(0 to 1, 0 to 2, 2 to 3, 4 to 5, 5 to 6, 4 to 7, 8 to 10, 9 to 10),
 )
 
+/**
+ * The decoration is drawn in the same purples in both themes, but on a light background those
+ * purples are far more prominent, so it is faded back to stay behind the text.
+ */
+private val backdropAlpha: Float get() = if (ThemeState.isDark) 1f else 0.38f
+
 @Composable
 fun MoleculeBackdrop(scene: MoleculeScene, modifier: Modifier = Modifier) {
+    val fade = backdropAlpha
     Canvas(modifier) {
         fun pos(n: SceneNode) = Offset(n.x * size.width, n.y * size.height)
 
         drawCircle(
             Brush.radialGradient(
-                listOf(Color(0xFF7C3AED).copy(alpha = 0.18f), Color.Transparent),
+                listOf(Color(0xFF7C3AED).copy(alpha = 0.18f * fade), Color.Transparent),
                 center = Offset(size.width * 0.75f, size.height * 0.5f),
                 radius = size.width * 0.9f,
             ),
@@ -74,7 +82,7 @@ fun MoleculeBackdrop(scene: MoleculeScene, modifier: Modifier = Modifier) {
                 val nb = scene.nodes[b]
                 val depth = min(na.depth, nb.depth)
                 drawLine(
-                    color = Color(0xFF7C4DDB).copy(alpha = 0.85f * depth),
+                    color = Color(0xFF7C4DDB).copy(alpha = 0.85f * depth * fade),
                     start = pos(na),
                     end = pos(nb),
                     strokeWidth = min(na.r.toPx(), nb.r.toPx()) * 0.42f,
@@ -82,7 +90,7 @@ fun MoleculeBackdrop(scene: MoleculeScene, modifier: Modifier = Modifier) {
                 )
             }
 
-        scene.nodes.sortedBy { it.depth }.forEach { drawSphere(pos(it), it.r.toPx(), it.depth) }
+        scene.nodes.sortedBy { it.depth }.forEach { drawSphere(pos(it), it.r.toPx(), it.depth * fade) }
     }
 }
 

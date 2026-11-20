@@ -19,7 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.deps import Container
-from app.api.routes import auth, chemistry, predictions, system
+from app.api.routes import auth, chat, chemistry, predictions, system
 from app.config import Settings, get_settings
 from app.data.db import init_db, make_engine, make_session_factory
 from app.domain.chemistry import ChemistryService
@@ -27,7 +27,9 @@ from app.domain.inference.service import InferenceService
 from app.domain.naming import PubChemNamer
 from app.services.auth import TokenService
 from app.services.email import ConsoleEmailSender, EmailSender, SmtpEmailSender
+from app.services.phone import ConsoleSmsSender
 from app.services.google import GoogleTokenVerifier
+from app.services.llm import ChatClient
 from app.services.ratelimit import AuthRateLimits
 
 log = logging.getLogger(__name__)
@@ -66,7 +68,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         auth_limits=AuthRateLimits(),
         namer=PubChemNamer(enabled=settings.pubchem_lookup),
         email_sender=_email_sender(settings),
+        sms_sender=ConsoleSmsSender(),
         google=GoogleTokenVerifier(settings.google_client_id_list) if settings.google_client_id_list else None,
+        chat=ChatClient(base_url=settings.llm_base_url, api_key=settings.llm_api_key,
+                        model=settings.llm_model, max_tokens=settings.llm_max_tokens),
     )
 
     @asynccontextmanager
@@ -82,7 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(RequestValidationError, _validation_error_handler)
 
     api = APIRouter(prefix="/api/v1")
-    for module in (system, auth, chemistry, predictions):
+    for module in (system, auth, chemistry, predictions, chat):
         api.include_router(module.router)
     app.include_router(api)
     return app

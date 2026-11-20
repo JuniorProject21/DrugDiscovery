@@ -35,6 +35,26 @@ interface InhibitApi {
     @POST("api/v1/auth/change-password")
     suspend fun changePassword(@Body body: PasswordChange): Response<Unit>
 
+    // ---------- phone number (progress report figures 11-3 and 11-5) ----------
+
+    @POST("api/v1/auth/phone/sign-up")
+    suspend fun phoneSignUp(@Body body: PhoneSignUpRequest): MessageResponse
+
+    @POST("api/v1/auth/phone/resend")
+    suspend fun phoneResendCode(@Body body: PhoneCodeRequest): MessageResponse
+
+    @POST("api/v1/auth/phone/verify")
+    suspend fun phoneVerify(@Body body: PhoneVerifyRequest): TokenResponse
+
+    @POST("api/v1/auth/phone/login")
+    suspend fun phoneLogin(@Body body: PhoneLoginRequest): TokenResponse
+
+    @POST("api/v1/auth/phone/password-reset/request")
+    suspend fun requestPhonePasswordReset(@Body body: PhoneCodeRequest): MessageResponse
+
+    @POST("api/v1/auth/phone/password-reset/confirm")
+    suspend fun confirmPhonePasswordReset(@Body body: PhonePasswordResetConfirm): TokenResponse
+
     @POST("api/v1/auth/google")
     suspend fun google(@Body body: GoogleSignInRequest): TokenResponse
 
@@ -59,11 +79,20 @@ interface InhibitApi {
     @PATCH("api/v1/predictions/{id}")
     suspend fun updatePrediction(@Path("id") id: Long, @Body body: SubmissionPatch): SubmissionDto
 
+    @POST("api/v1/predictions/batch")
+    suspend fun predictBatch(@Body body: BatchRequest): BatchResponseDto
+
+    @POST("api/v1/predictions/explain")
+    suspend fun explain(@Body body: SmilesRequest): ExplanationDto
+
     @POST("api/v1/predictions/similar")
     suspend fun similar(@Body body: SimilarRequest): List<SimilarHit>
 
     @DELETE("api/v1/predictions/{id}")
     suspend fun delete(@Path("id") id: Long): Response<Unit>
+
+    @POST("api/v1/chat")
+    suspend fun chat(@Body body: ChatRequest): ChatResponseDto
 
     @GET("api/v1/model")
     suspend fun model(): ModelInfoDto
@@ -79,7 +108,8 @@ interface InhibitApi {
             val client = OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 // A hosted server that was asleep, or still loading the model, can take a while to answer.
-                .readTimeout(90, TimeUnit.SECONDS)
+                // A batch of several hundred compounds takes much longer than one prediction.
+                .readTimeout(5, TimeUnit.MINUTES)
                 .addInterceptor { chain ->
                     val request = token()?.let { chain.request().newBuilder().header("Authorization", "Bearer $it").build() }
                     chain.proceed(request ?: chain.request())

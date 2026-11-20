@@ -4,6 +4,7 @@ Deliberately has no knowledge of the model, so validating or drawing a compound 
 loads the classifier into memory.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
@@ -136,12 +137,23 @@ class ChemistryService:
     # ---------- 2D depiction ----------
 
     def depict(self, smiles: str, *, width: int = 300, height: int = 300, theme: Theme = "light",
-               fmt: ImageFormat = "png") -> bytes:
-        """Draw the structure exactly as entered (no standardisation) on a transparent background."""
-        mol = self.parse(smiles)  # validate before touching the cache so errors aren't cached
-        return self._depict_cached(Chem.MolToSmiles(mol), width, height, theme, fmt)
+               fmt: ImageFormat = "png", highlight_atoms: Sequence[int] = ()) -> bytes:
+        """Draw the structure exactly as entered (no standardisation) on a transparent background.
 
-    def _depict(self, smiles: str, width: int, height: int, theme: Theme, fmt: ImageFormat) -> bytes:
+        `highlight_atoms` are indices into this SMILES as parsed, used by the "why this result"
+        panel to point at the fragments that moved the score.
+        """
+        mol = self.parse(smiles)  # validate before touching the cache so errors aren't cached
+        highlights = tuple(sorted({int(a) for a in highlight_atoms}))
+        if any(a < 0 or a >= mol.GetNumAtoms() for a in highlights):
+            raise InvalidSmilesError("An atom to highlight is not part of this molecule.")
+        # Highlighting is keyed on the SMILES as given, because canonicalising would renumber the atoms.
+        if highlights:
+            return self._depict(smiles, width, height, theme, fmt, highlights)
+        return self._depict_cached(Chem.MolToSmiles(mol), width, height, theme, fmt, ())
+
+    def _depict(self, smiles: str, width: int, height: int, theme: Theme, fmt: ImageFormat,
+                highlights: tuple[int, ...] = ()) -> bytes:
         mol = Chem.MolFromSmiles(smiles)
         drawer = rdMolDraw2D.MolDraw2DCairo(width, height) if fmt == "png" else rdMolDraw2D.MolDraw2DSVG(width, height)
         options = drawer.drawOptions()
@@ -150,7 +162,19 @@ class ChemistryService:
         options.setBackgroundColour((0, 0, 0, 0))
         options.bondLineWidth = max(1, round(min(width, height) / 150))
         options.padding = 0.08
-        rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
+        if highlights:
+            # The app's purple, softened, so the structure stays readable underneath.
+            colour = (0.76, 0.52, 1.0, 0.45)
+            atoms = list(highlights)
+            bonds = [b.GetIdx() for b in mol.GetBonds()
+                     if b.GetBeginAtomIdx() in highlights and b.GetEndAtomIdx() in highlights]
+            rdMolDraw2D.PrepareAndDrawMolecule(
+                drawer, mol, highlightAtoms=atoms, highlightBonds=bonds,
+                highlightAtomColors={a: colour for a in atoms},
+                highlightBondColors={b: colour for b in bonds},
+            )
+        else:
+            rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
         drawer.FinishDrawing()
         data = drawer.GetDrawingText()
         return data if isinstance(data, bytes) else data.encode()

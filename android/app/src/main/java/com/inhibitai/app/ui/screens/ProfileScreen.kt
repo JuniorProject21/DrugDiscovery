@@ -47,7 +47,7 @@ fun ProfileScreen(
                 .padding(horizontal = 20.dp),
         ) {
             VSpace(12.dp)
-            AppHeader(onBellClick = { Toast.makeText(context, "No new notifications", Toast.LENGTH_SHORT).show() })
+            AppHeader()
             VSpace(30.dp)
             Box(
                 Modifier
@@ -63,11 +63,14 @@ fun ProfileScreen(
             Text(vm.userName, fontSize = 34.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Text(vm.userEmail, fontSize = 16.sp, color = TextSecondary)
             VSpace(24.dp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ProfileStat("${vm.total}", "Predictions", Modifier.weight(1f))
-                ProfileStat("${vm.activeCount}", "Active hits", Modifier.weight(1f))
-                ProfileStat("${vm.savedCount}", "Saved", Modifier.weight(1f))
-            }
+            AdaptiveCells(
+                spacing = 10.dp,
+                cells = listOf(
+                    { m -> ProfileStat("${vm.total}", "Predictions", m) },
+                    { m -> ProfileStat("${vm.activeCount}", "Active hits", m) },
+                    { m -> ProfileStat("${vm.savedCount}", "Saved", m) },
+                )
+            )
             VSpace(20.dp)
             GlassCard(Modifier.fillMaxWidth()) {
                 Column {

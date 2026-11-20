@@ -21,17 +21,27 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inhibitai.app.ui.theme.CardBorder
 import com.inhibitai.app.ui.theme.PurpleLight
 import com.inhibitai.app.ui.theme.TextMuted
+import com.inhibitai.app.ui.theme.ThemeState
+import com.inhibitai.app.ui.theme.ThumbBg
 import kotlinx.coroutines.CancellationException
 
 /** Fetches a 2D drawing of a SMILES string (rendered by RDKit on the backend). */
 fun interface StructureImageLoader {
-    suspend fun load(smiles: String, widthPx: Int, heightPx: Int, dark: Boolean): ImageBitmap
+    /** [highlightAtoms] shades those atoms of [smiles], for the "why this result" panel. */
+    suspend fun load(
+        smiles: String,
+        widthPx: Int,
+        heightPx: Int,
+        dark: Boolean,
+        highlightAtoms: List<Int>,
+    ): ImageBitmap
 }
 
 val LocalStructureImageLoader = staticCompositionLocalOf<StructureImageLoader> {
@@ -54,6 +64,9 @@ fun StructureImage(
     dark: Boolean,
     modifier: Modifier = Modifier,
     showStatus: Boolean = true,
+    highlightAtoms: List<Int> = emptyList(),
+    /** What a screen reader calls the drawing. A raw SMILES is read letter by letter, so never that. */
+    label: String = "Chemical structure diagram",
 ) {
     val loader = LocalStructureImageLoader.current
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
@@ -61,9 +74,10 @@ fun StructureImage(
         fun px(max: Int) = if (max == Int.MAX_VALUE || max <= 0) 300 else (max / 16 * 16).coerceIn(32, 1200)
         val width = px(constraints.maxWidth)
         val height = px(constraints.maxHeight)
-        val state by produceState<ImageState>(ImageState.Loading, smiles, dark, width, height) {
+        val atoms = highlightAtoms.sorted()
+        val state by produceState<ImageState>(ImageState.Loading, smiles, dark, width, height, atoms) {
             value = try {
-                ImageState.Ready(loader.load(smiles, width, height, dark))
+                ImageState.Ready(loader.load(smiles, width, height, dark, atoms))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -71,7 +85,7 @@ fun StructureImage(
             }
         }
         when (val s = state) {
-            is ImageState.Ready -> Image(s.image, "Structure of $smiles", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            is ImageState.Ready -> Image(s.image, label, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             ImageState.Loading -> if (showStatus) {
                 CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
             }
@@ -88,11 +102,13 @@ fun MoleculeThumb(smiles: String, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(14.dp)
     Box(
         modifier
+            // The row around it already says which compound this is, so it stays out of TalkBack.
+            .clearAndSetSemantics { }
             .clip(shape)
-            .background(Color(0xFF0B0A14))
+            .background(ThumbBg)
             .border(1.dp, CardBorder, shape)
             .padding(4.dp),
     ) {
-        StructureImage(smiles, dark = true, modifier = Modifier.fillMaxSize(), showStatus = false)
+        StructureImage(smiles, dark = ThemeState.isDark, modifier = Modifier.fillMaxSize(), showStatus = false)
     }
 }

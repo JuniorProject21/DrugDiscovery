@@ -11,7 +11,14 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.data.models import Molecule, PasswordResetCode, Prediction, Submission, User
+from app.data.models import (
+    Molecule,
+    PasswordResetCode,
+    PhoneVerificationCode,
+    Prediction,
+    Submission,
+    User,
+)
 
 # (query fingerprint, candidate fingerprints) -> Tanimoto similarities
 SimilarityFn = Callable[[bytes, list[bytes]], list[float]]
@@ -27,11 +34,17 @@ class UserRepository:
     def get_by_email(self, email: str) -> User | None:
         return self.session.scalar(select(User).where(User.email == email.lower()))
 
+    def get_by_phone(self, phone: str) -> User | None:
+        """`phone` must already be normalised to E.164 by services.phone.normalise_phone."""
+        return self.session.scalar(select(User).where(User.phone == phone))
+
     def get_by_google_sub(self, subject: str) -> User | None:
         return self.session.scalar(select(User).where(User.google_sub == subject))
 
-    def create(self, *, email: str, password_hash: str, full_name: str) -> User:
-        user = User(email=email.lower(), password_hash=password_hash, full_name=full_name)
+    def create(self, *, password_hash: str, full_name: str, email: str | None = None,
+               phone: str | None = None) -> User:
+        user = User(email=email.lower() if email else None, phone=phone,
+                    password_hash=password_hash, full_name=full_name)
         self.session.add(user)
         self.session.flush()
         return user
@@ -65,6 +78,28 @@ class PasswordResetRepository:
             .where(PasswordResetCode.user_id == user_id, PasswordResetCode.used_at.is_(None),
                    PasswordResetCode.expires_at > datetime.now(timezone.utc))
             .order_by(PasswordResetCode.created_at.desc())
+        )
+
+
+class PhoneVerificationRepository:
+    """The same two operations as PasswordResetRepository, for phone sign-up codes."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def replace_for_user(self, user_id: int, *, code_hash: str, expires_at: datetime) -> PhoneVerificationCode:
+        self.session.execute(delete(PhoneVerificationCode).where(PhoneVerificationCode.user_id == user_id))
+        code = PhoneVerificationCode(user_id=user_id, code_hash=code_hash, expires_at=expires_at)
+        self.session.add(code)
+        self.session.flush()
+        return code
+
+    def active_for_user(self, user_id: int) -> PhoneVerificationCode | None:
+        return self.session.scalar(
+            select(PhoneVerificationCode)
+            .where(PhoneVerificationCode.user_id == user_id, PhoneVerificationCode.used_at.is_(None),
+                   PhoneVerificationCode.expires_at > datetime.now(timezone.utc))
+            .order_by(PhoneVerificationCode.created_at.desc())
         )
 
 

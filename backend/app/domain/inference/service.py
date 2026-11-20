@@ -15,9 +15,11 @@ import numpy as np
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
 
+from app.domain.adme import profile as adme_profile
 from app.domain.chemistry import ChemistryService, InvalidSmilesError
 from app.domain.inference.bundle import BundleError, ModelBundle, load_bundle
 from app.domain.inference.conformal import threshold_confidence
+from app.domain.inference.explain import Explanation, explain_prediction
 from app.domain.inference.featurize import Featurizer
 
 log = logging.getLogger(__name__)
@@ -25,6 +27,10 @@ log = logging.getLogger(__name__)
 
 class ModelUnavailableError(RuntimeError):
     pass
+
+
+class ExplanationUnavailableError(RuntimeError):
+    """This model cannot say which fragments drove the score (for example the placeholder model)."""
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,8 @@ class InferenceModel(Protocol):
     is_stub: bool
 
     def predict(self, mol: Chem.Mol) -> InferenceResult: ...
+
+    def explain(self, canonical_smiles: str) -> Explanation: ...
 
     def info(self) -> dict: ...
 
@@ -138,7 +146,36 @@ class BundleModel:
         return InferenceResult(
             label=label, score=p, score_std=p_std, confidence=float(confidence),
             threshold=b.threshold, p_value_active=pa, p_value_inactive=pi,
-            nearest_similarity=nearest, in_domain=in_domain, reliability=reliability, pic50=pic50, adme=None,
+            nearest_similarity=nearest, in_domain=in_domain, reliability=reliability, pic50=pic50,
+            # Computed from the structure (Lipinski, Veber, structural alerts), not predicted by
+            # this model, and marked as such in the payload.
+            adme=adme_profile(mol),
+        )
+
+    def explain(self, canonical_smiles: str) -> Explanation:
+        """Which fragments pushed this compound's score, for the "why this result" panel.
+
+        Works from the canonical SMILES rather than a parsed molecule so that the atom indices it
+        reports match a fresh parse of that same string, which is what the app draws.
+        """
+        b = self.bundle
+        mol = Chem.MolFromSmiles(canonical_smiles)
+        if mol is None:
+            raise InvalidSmilesError("Could not read this structure.")
+        config = b.featurizer
+        if config.kind not in ("morgan", "morgan_count"):
+            raise ExplanationUnavailableError(
+                f"Explanations need Morgan fingerprints; this model uses {config.kind}.")
+        generator = rdFingerprintGenerator.GetMorganGenerator(
+            radius=config.radius, fpSize=config.n_bits, includeChirality=config.include_chirality)
+        output = rdFingerprintGenerator.AdditionalOutput()
+        output.AllocateBitInfoMap()
+        generator.GetFingerprint(mol, additionalOutput=output)
+        result = self.predict(mol)
+        return explain_prediction(
+            canonical_smiles=canonical_smiles, featurizer=self.featurizer, classifiers=b.classifiers,
+            positive_index=b.positive_index, threshold=result.threshold, label=result.label,
+            score=result.score, bit_info={int(k): tuple(v) for k, v in output.GetBitInfoMap().items()},
         )
 
     def info(self) -> dict:
@@ -177,8 +214,15 @@ class StubModel:
             label="active" if p >= self.threshold else "inactive", score=p, score_std=None,
             confidence=threshold_confidence(p, self.threshold), threshold=self.threshold,
             p_value_active=None, p_value_inactive=None, nearest_similarity=None, in_domain=None,
-            reliability=None, pic50=None, adme=None,
+            reliability=None, pic50=None,
+            # The activity numbers above are placeholders, but ADME is read off the structure, so
+            # it is just as real here as with a trained model.
+            adme=adme_profile(mol),
         )
+
+    def explain(self, canonical_smiles: str) -> Explanation:
+        raise ExplanationUnavailableError(
+            "No trained model is loaded, so there is nothing to explain.")
 
     def info(self) -> dict:
         return {"model_version": self.model_version, "target": self.target, "is_stub": True,
@@ -238,6 +282,10 @@ class InferenceService:
     def predict(self, mol: Chem.Mol) -> tuple[str, InferenceResult]:
         model = self.load()
         return model.model_version, model.predict(mol)
+
+    def explain(self, canonical_smiles: str) -> tuple[str, Explanation]:
+        model = self.load()
+        return model.model_version, model.explain(canonical_smiles)
 
     def status(self) -> dict:
         """Current state without triggering a load."""

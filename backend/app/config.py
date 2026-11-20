@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # (everyone is logged out on restart). Always set it in a shared/deployed server.
     jwt_secret: str = ""
     jwt_expiry_minutes: int = 60 * 24 * 7
+    #: Report Table 6-5: "Implement automatic session expiration after few minutes of inactivity."
+    #: A token also stops working this long after the account's last request, whatever its own
+    #: expiry says. 0 switches the idle check off.
+    session_idle_minutes: int = 30
 
     # Who may create an account: comma-separated emails and/or @domains, for example
     # "@sharjah.ac.ae, supervisor@gmail.com". Empty means anyone who can reach the server.
@@ -64,6 +68,19 @@ class Settings(BaseSettings):
 
     # "Sign in with Google": the OAuth *web* client ID(s) the app asks Google for tokens for.
     google_client_ids: str = ""
+
+    # The open-weights chat model behind "Learn more" on a result. Any OpenAI-compatible endpoint
+    # works: Groq, Together, OpenRouter, a Hugging Face router, or a local Ollama
+    # ("http://localhost:11434/v1", no key). Leave llm_base_url empty and the assistant is simply
+    # switched off: the app falls back to its own written explanation.
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+    llm_max_tokens: int = 500
+
+    @property
+    def llm_enabled(self) -> bool:
+        return bool(self.llm_base_url and self.llm_model)
 
     @field_validator("database_url")
     @classmethod

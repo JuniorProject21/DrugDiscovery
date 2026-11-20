@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Files the app may hand to other apps through the share sheet: the exported PDF reports. -->
+<!-- Files the app may hand to other apps through the share sheet: PDF reports and CSV exports. -->
 <paths>
     <cache-path name="reports" path="reports/" />
+    <cache-path name="exports" path="exports/" />
 </paths>

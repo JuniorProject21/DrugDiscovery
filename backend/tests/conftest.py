@@ -90,8 +90,8 @@ def database_url(request, tmp_path) -> str:
     engine = create_engine(url)
     Base.metadata.drop_all(engine)
     with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS submissions, predictions, molecules, password_reset_codes, users, "
-                          "alembic_version CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS submissions, predictions, molecules, password_reset_codes, "
+                          "phone_verification_codes, users, alembic_version CASCADE"))
     engine.dispose()
     return url
 
@@ -119,7 +119,7 @@ def make_client(database_url, tmp_path):
         client.close()
 
 
-def register(client: TestClient, email="noor@example.com", password="correct-horse", name="Dr. Noor") -> dict:
+def register(client: TestClient, email="noor@example.com", password="Correct-horse9", name="Dr. Noor") -> dict:
     response = client.post("/api/v1/auth/register", json={"email": email, "password": password, "full_name": name})
     assert response.status_code == 201, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
